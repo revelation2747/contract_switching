@@ -15,12 +15,14 @@ CUTOFF_DATE = pd.Timestamp('2025-09-30')
 START_DATE_DEFAULT = pd.Timestamp('2022-01-01')
 
 def run_daily_inference():
-    # --- 1. 数据同步部分保持不变 ---
+    # --- 1. 数据同步逻辑 ---
     hdfs = fs.HadoopFileSystem('hdfs://ftxz-hadoop', user='zli')
     if not os.path.exists(PARQUET_PATH):
-        latest_date = START_DATE_DEFAULT - pd.Timedelta(days=1); hist_df = pd.DataFrame()
+        latest_date = START_DATE_DEFAULT - pd.Timedelta(days=1)
+        hist_df = pd.DataFrame()
     else:
-        hist_df = pd.read_parquet(PARQUET_PATH); hist_df['date_dt'] = pd.to_datetime(hist_df['date'])
+        hist_df = pd.read_parquet(PARQUET_PATH)
+        hist_df['date_dt'] = pd.to_datetime(hist_df['date'])
         latest_date = hist_df['date_dt'].max()
 
     new_files = get_hdfs_files(hdfs, OLD_FOLDER, latest_date + pd.Timedelta(days=1), CUTOFF_DATE)
@@ -34,56 +36,56 @@ def run_daily_inference():
                 with hdfs.open_input_file(path) as f:
                     tmp = pq.read_table(f, columns=['symbol_str', 'volume']).to_pandas()
                 day_sum = tmp.groupby('symbol_str').agg({'volume': 'last'}).reset_index()
-                day_sum['date'] = f_date.strftime('%Y-%m-%d'); new_data_list.append(day_sum)
-            except: continue
+                day_sum['date'] = f_date.strftime('%Y-%m-%d')
+                new_data_list.append(day_sum)
+            except:
+                continue
         if new_data_list:
             inc_df = pd.concat(new_data_list, ignore_index=True)
-            inc_df = finalize_symbol_parsing_v5(inc_df); inc_df['date_dt'] = pd.to_datetime(inc_df['date'])
+            inc_df = finalize_symbol_parsing_v5(inc_df)
+            inc_df['date_dt'] = pd.to_datetime(inc_df['date'])
             hist_df = pd.concat([hist_df, inc_df], ignore_index=True).drop_duplicates(subset=['symbol_code', 'delivery_code', 'date'], keep='last')
             hist_df.to_parquet(PARQUET_PATH, index=False)
-
-    # --- 2. 特征工程与标签 ---
     cal = get_pure_calendar()
     df = make_features_logic(hist_df)
     df = df.merge(cal[['date_dt', 'is_eve_of_long_holiday', 'is_before_holiday']], on='date_dt', how='left')
     
-    # 构建训练标签 (T+5 逻辑)
-    df['target_t5'] = df.groupby(['symbol_code', 'delivery_code'])['volume_share'].shift(-5)
-    df['label'] = (df.groupby(['symbol_code', 'date_dt'])['target_t5'].transform(lambda x: x == x.max()) & (df['target_t5'] > 0.1)).astype(int)
+    df['rank'] = df.groupby(['symbol_code', 'date_dt'])['volume'].rank(ascending=False, method='first')
+    rank_t5 = df.groupby(['symbol_code', 'delivery_code'])['rank'].shift(-5)
+    target_val_t5 = df.groupby(['symbol_code', 'delivery_code'])['volume_share'].shift(-5)
+    
+    df['label'] = np.where(
+        (rank_t5.isna()) | (rank_t5 <= 0),
+        np.nan,
+        ((rank_t5 == 1) & (target_val_t5 > 0.1)).astype(float)
+    )
     
     feature_cols = ['volume_share', 'is_eve_of_long_holiday', 'is_before_holiday'] + \
                    [f'share_ma_{k}' for k in [3,5,10]] + [f'share_lag_{k}' for k in [3,5,10]] + \
                    [f'share_v_{k}' for k in [3,5,10]] + [f'share_a_{k}' for k in [3,5,10]]
     
-    # --- 3. 训练模型 (保持全量训练，但避开最近 10 天防止 Label 泄露) ---
     today_dt = df['date_dt'].max()
-    train_df = df[df['date_dt'] <= today_dt - pd.Timedelta(days=10)].dropna(subset=['label'] + feature_cols)
+    train_df = df.dropna(subset=['label'] + feature_cols).copy()
+    train_df = train_df[train_df['date_dt'] < today_dt]
     
     clf = lgb.LGBMClassifier(n_estimators=150, learning_rate=0.05, num_leaves=31, verbosity=-1)
     clf.set_params(objective=asymmetric_binary_logloss)
     clf.fit(train_df[feature_cols], train_df['label'])
 
-    # --- 4. 每日推断报警逻辑 (严格对齐回测) ---
     curr = df[df['date_dt'] == today_dt].copy()
-    # 计算原始分数并转化为概率
+    if curr.empty:
+        print(f"Warning: No data found for today ({today_dt.date()})")
+        return
+
     curr['prob'] = 1.0 / (1.0 + np.exp(-clf.predict(curr[feature_cols], raw_score=True)))
     
-    # 确定当前的真实主力 (Rank 1)
-    curr['rank'] = curr.groupby('symbol_code')['volume'].rank(ascending=False, method='first')
-    # 确定模型预测的最佳换月目标 (Pred Rank 1)
+    curr['curr_rank'] = curr.groupby('symbol_code')['volume'].rank(ascending=False, method='first')
     curr['pred_rank'] = curr.groupby('symbol_code')['prob'].rank(ascending=False, method='first')
     
-    # 【核心对齐】：触发报警条件
-    # 1. 模型认为该合约是 T+5 概率最大的 (pred_rank == 1)
-    # 2. 该合约目前还不是主力 (rank != 1)
-    # 3. 概率必须超过 0.5 (阈值过滤)
-    curr['is_alert'] = (curr['pred_rank'] == 1) & (curr['rank'] != 1) & (curr['prob'] > 0.5)
+    curr['is_alert'] = (curr['pred_rank'] == 1) & (curr['curr_rank'] != 1) & (curr['prob'] > 0.5)
 
-    # 提取报警信号
     signals = curr[curr['is_alert']].copy()
-    
-    # 关联当前主力信息，方便观察对比
-    majors = curr[curr['rank'] == 1][['symbol_code', 'delivery_code', 'volume']].rename(
+    majors = curr[curr['curr_rank'] == 1][['symbol_code', 'delivery_code', 'volume']].rename(
         columns={'delivery_code': 'Current_Major', 'volume': 'Current_Vol'}
     )
     
@@ -94,7 +96,6 @@ def run_daily_inference():
         'prob': 'Confidence'
     })
     
-    # 按置信度排序输出
     res = res[['symbol_code', 'Current_Major', 'Target_Major', 'Confidence', 'Current_Vol', 'Target_Vol']]
     res = res.sort_values('Confidence', ascending=False)
 

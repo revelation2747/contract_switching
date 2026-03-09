@@ -7,10 +7,10 @@
 
 ## Basic Results
 - 测试时间范围：2025-06-30以后
-- 所有商品总计换月659个，预测信号1403次
+- 所有商品总计换月581个，预测信号1402次
 - 视换月前后的两个合约都匹配为match的条件
-   - recall = #(match) / #(real) = 88.81%
-   - precision = #(match) / #(pred) = 94.54%
+   - recall = #(match) / #(real) = 88.12%
+   - precision = #(match) / #(pred) = 94.65%
    - 误差来自于换月前后两个合约volume比较相近可能导致概率预测结果交错，以及volume变化混乱的品种
 
 <img src="./output_results/overall_gap_distribution.png" width="800px" alt="信号时间和真实换月时间gap分布">

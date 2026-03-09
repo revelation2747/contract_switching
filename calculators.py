@@ -79,18 +79,15 @@ def calculate_full_performance(full_test_df, split_date, trade_dates_list):
     summary_list, global_gaps, audit_records, matched_pred_dates = [], [], [], {}
     symbols = full_test_df['symbol_code'].unique()
     for sym in symbols:
-        # --- 修复 1: 添加缺失的 sym_sub 定义 ---
         sym_sub = full_test_df[full_test_df['symbol_code'] == sym].sort_values('date_dt').copy()
         
         daily_main = sym_sub[sym_sub['rank'] == 1].drop_duplicates('date_dt').set_index('date_dt')['delivery_code']
-        
-        # --- 修复 2: 使用 .iloc[1:] 避开 06-30 的伪换月 ---
         diff_mask = (daily_main != daily_main.shift(1))
-        real_sw_series = daily_main[diff_mask].iloc[1:] # 丢弃第一行记录
+        real_sw_series = daily_main[diff_mask].iloc[1:]
         
         real_events = []
         for d, to_c in real_sw_series.items():
-            if d <= split_date: continue # 双重保险
+            if d <= split_date: continue
             try:
                 idx = daily_main.index.get_loc(d)
                 real_events.append({'date': d, 'from': daily_main.iloc[idx-1], 'to': to_c, 'matched': False})
