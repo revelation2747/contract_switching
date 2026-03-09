@@ -79,12 +79,18 @@ def calculate_full_performance(full_test_df, split_date, trade_dates_list):
     summary_list, global_gaps, audit_records, matched_pred_dates = [], [], [], {}
     symbols = full_test_df['symbol_code'].unique()
     for sym in symbols:
+        # --- 修复 1: 添加缺失的 sym_sub 定义 ---
         sym_sub = full_test_df[full_test_df['symbol_code'] == sym].sort_values('date_dt').copy()
+        
         daily_main = sym_sub[sym_sub['rank'] == 1].drop_duplicates('date_dt').set_index('date_dt')['delivery_code']
-        real_sw_series = daily_main[daily_main != daily_main.shift(1)].dropna()
+        
+        # --- 修复 2: 使用 .iloc[1:] 避开 06-30 的伪换月 ---
+        diff_mask = (daily_main != daily_main.shift(1))
+        real_sw_series = daily_main[diff_mask].iloc[1:] # 丢弃第一行记录
+        
         real_events = []
         for d, to_c in real_sw_series.items():
-            if d < split_date: continue
+            if d <= split_date: continue # 双重保险
             try:
                 idx = daily_main.index.get_loc(d)
                 real_events.append({'date': d, 'from': daily_main.iloc[idx-1], 'to': to_c, 'matched': False})
@@ -145,10 +151,10 @@ def plot_results(full_test_df, stats_df, all_gaps, matched_dates_dict, split_dat
     first_signal_gaps = []
     symbols = full_test_df['symbol_code'].unique()
     for sym in symbols:
-        sym_sub = full_test_df[full_test_df['symbol_code'] == sym].sort_values('date_dt')
+        sym_sub = full_test_df[full_test_df['symbol_code'] == sym].sort_values('date_dt').copy()
         daily_main = sym_sub[sym_sub['rank'] == 1].drop_duplicates('date_dt').set_index('date_dt')['delivery_code']
-        real_sw = daily_main[daily_main != daily_main.shift(1)].dropna()
-        real_sw = real_sw[real_sw.index >= split_date]
+        real_sw = daily_main[daily_main != daily_main.shift(1)].iloc[1:] 
+        real_sw = real_sw[real_sw.index > split_date]
         for r_date, to_c in real_sw.items():
             try:
                 matched_alerts = sym_sub[(sym_sub['is_alert']) & (sym_sub['delivery_code'] == to_c) & (sym_sub['date_dt'] >= split_date)]
@@ -200,7 +206,8 @@ def plot_results(full_test_df, stats_df, all_gaps, matched_dates_dict, split_dat
             real_sw = daily_main[(daily_main['delivery_code'] == code) & (daily_main['delivery_code'] != daily_main['delivery_code'].shift(1))]
             for d in real_sw[real_sw.index >= split_date].index:
                 ax.scatter(d, y_max + 0.1 * y_range, color='red', marker='*', s=400, edgecolors='black', zorder=30)
-                ax.text(d, y_max + 0.15 * y_range, f"W{d.weekday()+1}", color='red', fontsize=12, fontweight='bold', ha='center')
+                label_str = d.strftime('%m-%d(%a)') 
+                ax.text(d, y_max + 0.15 * y_range, label_str, color='red', fontsize=11, fontweight='bold', ha='center', rotation=0)
                 try: ax.axvline(trade_dates_list[trade_dates_list.index(d) - 5], color='red', alpha=0.3, linestyle=':', lw=1.5)
                 except: pass
         sym_matches = matched_dates_dict.get(sym, [])
