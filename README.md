@@ -1,29 +1,24 @@
-# 未来五天换月预测说明
+# 期货主力合约切换预测系统（Futures Major Contract Switch Prediction System）
 
-## 输入
+1. depth数据更新读入
+2. 训练模型（T-5之前）
+  在合约维度，构造lag和移动平均的特征作为X_features输入，构造 T+5是否是主力合约（0/1） 作为y_targat
+  但在这里修改了一下损失函数，给miss掉信号的情况赋予了更高的惩罚权重，所以classifier会退化成regressor
+1. 信号输出
+  在合约维度，预测该合约在T+5是主力合约的条件概率，将概率排序，判断概率最大的合约与当前主力合约是否一致，不一致则发出信号
 
-- 数据文件：`contract_volume.parquet`
-- 必要字段：
-   - `date`：交易日期
-   - `symbol_code`：品种代码
-   - `delivery_code`：合约代码
-   - `volume`：成交量
+output sample：
 
-## 用到的特征
-
-- 日历特征：
-   - `is_eve_of_long_holiday`：是否长假前最后交易日
-   - `is_before_holiday`：是否节假日前交易日
-- 成交量占比特征：
-   - `volume_share`：当日该合约成交量占同品种总成交量的比例
-- 时序衍生特征（`k in [3, 5, 10]`）：
-   - `share_ma_k`：`volume_share` 的 k 日均值
-   - `share_lag_k`：`volume_share` 的 k 日滞后
-   - `share_v_k`：`volume_share` 的 k 日变化量
-   - `share_a_k`：`share_v_k` 的 1 日变化量
-
-## 输出如何解读（未来五天内发生换月的预测结果）
-
-- 模型输出 `prob`：表示某合约在未来 5 个交易日内成为主力合约的概率。
-- 每个 `symbol_code + date` 内，`prob` 最高的合约记为 `pred_rank == 1`，即当天最可能发生换月的目标合约。
-- 若该合约当天还不是主力（`rank != 1`），则视为一个换月信号
+[DAILY SIGNAL REPORT] | 2026-03-12
+symbol_code Current_Major Target_Major  Confidence  Current_Vol  Target_Vol
+         BR          2604         2605    0.722689       329538      257735
+         AD          2604         2605    0.685336         6862        4888
+         AL          2604         2605    0.668363       319157      278849
+         PF          2604         2606    0.661580       167015      148036
+         CU          2604         2605    0.637586        87960       62188
+          V          2605         2701    0.615281        37603       20895
+         SC          2604         2605    0.613598       165535      111177
+         SF          2605         2607    0.593299       117753       78086
+         WR          2605         2607    0.584973          114          59
+          L          2605         2701    0.551561         5750        2351
+# contract_switching
