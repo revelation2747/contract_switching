@@ -14,6 +14,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 def get_pure_calendar(start='2022-01-01', end='2026-12-31'):
+    """交易日历，包含是否为长假前夕和是否为节假日前一天的标记"""
     all_days = pd.date_range(start, end)
     trade_days = [d for d in all_days if is_workday(d) and d.weekday() < 5]
     cal = pd.DataFrame({'date_dt': trade_days}).sort_values('date_dt')
@@ -23,6 +24,7 @@ def get_pure_calendar(start='2022-01-01', end='2026-12-31'):
     return cal
 
 def asymmetric_binary_logloss(y_true, y_pred):
+    """自定义损失函数，针对正负样本不同的误分类成本进行加权"""
     probs = 1.0 / (1.0 + np.exp(-y_pred))
     grad = probs - y_true
     hess = probs * (1.0 - probs)
@@ -31,6 +33,7 @@ def asymmetric_binary_logloss(y_true, y_pred):
     return grad * weight, hess * weight
 
 def finalize_symbol_parsing_v5(df):
+    """数据更新需要用到的的helper，解析合约代码并生成symbol_code和delivery_code"""
     def get_delivery_map(series):
         valid_series = series.dropna().astype(str)
         if valid_series.empty: return {}
@@ -46,11 +49,12 @@ def finalize_symbol_parsing_v5(df):
     return df
 
 def make_features_logic(df):
+    """生成特征，滞后1/3/5/10天的volume_share及其移动平均、差分特征"""
     df = df.sort_values(['symbol_code', 'delivery_code', 'date_dt'])
     group_contract = df.groupby(['symbol_code', 'delivery_code'])
     group_daily = df.groupby(['symbol_code', 'date_dt'])
     df['volume_share'] = df['volume'] / (group_daily['volume'].transform('sum') + 1e-9)
-    for k in [3, 5, 10]:
+    for k in [1, 2, 3, 5, 10]:
         df[f'share_ma_{k}'] = group_contract['volume_share'].transform(lambda x: x.rolling(k).mean())
         df[f'share_lag_{k}'] = group_contract['volume_share'].shift(k)
         df[f'share_v_{k}'] = group_contract['volume_share'].diff(k)
@@ -58,6 +62,7 @@ def make_features_logic(df):
     return df
 
 def get_hdfs_files(hdfs, folder_path, start_date, end_date=None):
+    """获取HDFS上指定文件夹内符合日期范围的文件列表，在contract_volume.parquet的基础上更新增量"""
     try:
         selector = fs.FileSelector(folder_path, recursive=True)
         infos = hdfs.get_file_info(selector)
@@ -76,6 +81,7 @@ def get_hdfs_files(hdfs, folder_path, start_date, end_date=None):
         return []
 
 def calculate_full_performance(full_test_df, split_date, trade_dates_list):
+    """测试集上的评估，主脚本不调用"""
     summary_list, global_gaps, audit_records, matched_pred_dates = [], [], [], {}
     symbols = full_test_df['symbol_code'].unique()
     for sym in symbols:
@@ -145,6 +151,7 @@ def calculate_full_performance(full_test_df, split_date, trade_dates_list):
     return summary_df, pd.Series(global_gaps), audit_df, matched_pred_dates
 
 def plot_results(full_test_df, stats_df, all_gaps, matched_dates_dict, split_date, trade_dates_list, n=80, save_path=None):
+    """测试集上评估的可视化，主脚本不调用"""
     first_signal_gaps = []
     symbols = full_test_df['symbol_code'].unique()
     for sym in symbols:

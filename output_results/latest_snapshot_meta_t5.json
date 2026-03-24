@@ -1,0 +1,114 @@
+{
+  "last_update_ts": "2026-03-24 23:10:05.346468",
+  "last_success_date": "2026-03-24",
+  "latest_signal_date": "2026-03-24",
+  "max_available_date": "2026-03-24",
+  "train_start": "2024-01-14",
+  "val_start": "2025-12-01",
+  "val_metrics": {
+    "f1": 0.8003502626970228,
+    "precision": 0.8294010889292196,
+    "recall": 0.7732656514382402,
+    "day1_hit_rate": 0.5384615384615384,
+    "day1_count": 130,
+    "day2_hit_rate": 0.6910569105691057,
+    "day2_count": 123,
+    "day3_hit_rate": 0.8205128205128205,
+    "day3_count": 117,
+    "day4_hit_rate": 0.9017857142857143,
+    "day4_count": 112,
+    "day5_hit_rate": 0.9629629629629629,
+    "day5_count": 108
+  },
+  "horizon": 5,
+  "ensemble_cfg": {
+    "family": "three_model",
+    "s_rank": {
+      "window_before": 8,
+      "window_after": 8,
+      "noise_frac": 0.1
+    },
+    "s_vshare": {
+      "window_before": 20,
+      "window_after": 20,
+      "noise_frac": 0.0
+    },
+    "s_days": {
+      "window_before": 20,
+      "window_after": 20,
+      "noise_frac": 0.0
+    },
+    "rank_cfg": {
+      "learning_rate": 0.02,
+      "num_leaves": 63,
+      "feature_fraction": 0.85,
+      "min_data_in_leaf": 20,
+      "num_boost_round": 900
+    },
+    "v_cfg": {
+      "learning_rate": 0.02,
+      "num_leaves": 63,
+      "feature_fraction": 0.85,
+      "min_data_in_leaf": 20,
+      "num_boost_round": 900
+    },
+    "d_cfg": {
+      "learning_rate": 0.02,
+      "num_leaves": 63,
+      "feature_fraction": 0.85,
+      "min_data_in_leaf": 20,
+      "num_boost_round": 900
+    },
+    "mlp_cfg": {
+      "hidden_layer_sizes": [
+        64,
+        32
+      ],
+      "alpha": 0.0001,
+      "learning_rate_init": 0.001,
+      "max_iter": 1200
+    },
+    "ens_cfg": {
+      "method": "exponential",
+      "decay": 0.05,
+      "gamma": 2.0
+    }
+  },
+  "mode": "bootstrap_backfill",
+  "run_as_of_date": null,
+  "local_snapshot_dir": "output_results",
+  "hdfs_snapshot_dir": "/ext1/user/zli/hxr/project/contract_switching/snapshots",
+  "meta_file": "output_results/latest_snapshot_meta_t5.json",
+  "valid_results_file": "output_results/validation_results_t5.parquet",
+  "monthly_signal_dir": "output_results/monthly_signals_t5",
+  "monthly_signal_months": [
+    "202512",
+    "202601",
+    "202602",
+    "202603"
+  ],
+  "hdfs_sync_status": {
+    "enabled": true,
+    "uploaded": [
+      "/ext1/user/zli/hxr/project/contract_switching/snapshots/latest_snapshot_meta_t5.json",
+      "/ext1/user/zli/hxr/project/contract_switching/snapshots/validation_results_t5.parquet"
+    ],
+    "failed": []
+  },
+  "hdfs_daily_signal_status": {
+    "enabled": true,
+    "uploaded": [
+      "/ext1/user/zli/hxr/project/contract_switching/snapshots/202512.parquet",
+      "/ext1/user/zli/hxr/project/contract_switching/snapshots/202601.parquet",
+      "/ext1/user/zli/hxr/project/contract_switching/snapshots/202602.parquet",
+      "/ext1/user/zli/hxr/project/contract_switching/snapshots/202603.parquet"
+    ],
+    "failed": [],
+    "files": [
+      "output_results/monthly_signals_t5/202512.parquet",
+      "output_results/monthly_signals_t5/202601.parquet",
+      "output_results/monthly_signals_t5/202602.parquet",
+      "output_results/monthly_signals_t5/202603.parquet"
+    ]
+  }
+}
